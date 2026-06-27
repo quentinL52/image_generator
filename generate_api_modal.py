@@ -18,7 +18,7 @@ app_api = FastAPI(title="Solle Flux Generation API")
 app_api.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
