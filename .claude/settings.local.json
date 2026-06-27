@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python training/prepare_dataset.py)",
+      "Bash(./venv/Scripts/python.exe diag_ip.py)",
+      "Bash(./venv/Scripts/python.exe diag_bg.py)",
+      "Bash(./venv/Scripts/python.exe diag_decor.py)",
+      "Bash(./venv/Scripts/python.exe generate_lora.py \"full body, solo, sitting in a cozy library armchair, fireplace, tall bookshelves, warm lamp light, detailed background\")",
+      "Bash(./venv/Scripts/python.exe diag_fur.py)",
+      "Bash(./venv/Scripts/python.exe diag_face.py)",
+      "Bash(rm -vf diag_*.py diag_*.png generate_solle.py generate_simple.py)",
+      "Bash(./venv/Scripts/python.exe -c ' *)",
+      "Bash(ls -1 *.py)",
+      "Bash(ls -1 diag_* generate_solle.py generate_simple.py)",
+      "Bash(./venv/Scripts/python.exe generate_lora.py \"full body, solo, lying on a sun lounger, relaxing, holding a cocktail glass, rooftop terrace, city skyline at sunset, detailed background\")",
+      "Bash(./venv/Scripts/python.exe -c \"import reportlab; print\\('reportlab', reportlab.Version\\)\")",
+      "Bash(./venv/Scripts/python.exe build_dataset_guide.py)",
+      "Bash(./venv/Scripts/python.exe -m pip install -q pypdf)",
+      "Bash(./venv/Scripts/python.exe prepare_dataset_resize.py)",
+      "Bash(./venv/Scripts/python.exe annotate_styles.py)",
+      "Bash(./venv/Scripts/python.exe -c \"import json; nb=json.load\\(open\\('training/kaggle_train_solle_locon.ipynb',encoding='utf-8'\\)\\); print\\('JSON valide -', len\\(nb['cells']\\), 'cellules'\\)\")",
+      "WebSearch",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:deepwiki.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(curl -s -o /tmp/sdmodel.py https://raw.githubusercontent.com/ostris/ai-toolkit/main/toolkit/stable_diffusion_model.py)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /tmp/cfg.py https://raw.githubusercontent.com/ostris/ai-toolkit/main/toolkit/config_modules.py)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/ostris/ai-toolkit/main/toolkit/models/flux_gpu_splitter.py\" -o /tmp/split.py)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/ostris/ai-toolkit/main/toolkit/util/gpu_splitter.py\" -o /tmp/split2.py)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/ostris/ai-toolkit/main/toolkit/models/flux.py\" -o /tmp/flux.py)",
+      "Bash(sed -n '121,178p' /tmp/flux.py)",
+      "Bash(grep -n \"split_model_other_module_param_count_scale\\\\|split_model_over_gpus\" /tmp/cfg.py)"
+    ]
+  }
+}
