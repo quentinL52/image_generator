@@ -114,13 +114,7 @@ class FluxGenerator:
         if lora_path:
             print(f"Chargement du LoRA depuis {lora_path}...")
             self.pipe_txt2img.load_lora_weights(lora_path)
-            # Fuse le LoRA dans les poids du modèle de base.
-            # Avantage : le LoRA est intégré directement, pas besoin de
-            # joint_attention_kwargs à l'inférence, et compatible avec
-            # sequential_cpu_offload (qui sinon casse le scaling runtime).
-            self.pipe_txt2img.fuse_lora(lora_scale=1.0)
-            self.pipe_txt2img.unload_lora_weights()  # Libère la mémoire de l'adaptateur
-            print(f"LoRA '{target_name}' chargé et fusionné dans le modèle.")
+            print(f"LoRA '{target_name}' chargé avec succès (sans fuse_lora car expérimental sur Flux).")
         else:
             print(f"ERREUR CRITIQUE : '{target_name}' introuvable dans le volume !")
             print(f"Fichiers disponibles : {[os.path.basename(l) for l in loras]}")
@@ -146,7 +140,7 @@ class FluxGenerator:
         )
         self.pipe_img2img.enable_sequential_cpu_offload()
 
-        print("Pipelines prêts (bfloat16 + sequential_cpu_offload + LoRA fusionné).")
+        print("Pipelines prêts (bfloat16 + sequential_cpu_offload + LoRA).")
 
     @modal.method()
     def generate(self, req: GenerateRequest):
@@ -154,20 +148,23 @@ class FluxGenerator:
         from PIL import Image
 
         prompt = req.prompt
-        # Force le trigger s'il n'est pas présent
+        # Force le trigger complet (nom + classe) comme dans le dataset
         if "sollechar" not in prompt.lower():
-            prompt = f"sollechar, {prompt}"
+            prompt = f"sollechar, purple furry monster, {prompt}"
+        elif "purple furry monster" not in prompt.lower():
+            prompt = prompt.replace("sollechar", "sollechar, purple furry monster")
 
         # S'assurer que les dimensions sont des multiples de 64 (requis pour Flux)
         req.width = (req.width // 64) * 64
         req.height = (req.height // 64) * 64
 
-        # Paramètres d'inférence (Schnell = 4 steps, guidance=1.0 comme le training sampler)
-        # Pas de joint_attention_kwargs : le LoRA est fusionné dans les poids
+        # Paramètres d'inférence (Schnell = 4 steps, guidance=0.0 natif)
+        # On utilise joint_attention_kwargs pour le LoRA scale car fuse_lora est buggé sur Flux
         kwargs = {
             "prompt": prompt,
             "num_inference_steps": 4,
-            "guidance_scale": 1.0,
+            "guidance_scale": 0.0,
+            "joint_attention_kwargs": {"scale": req.lora_scale},
         }
 
         if req.init_image:
