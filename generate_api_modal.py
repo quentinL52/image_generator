@@ -114,7 +114,13 @@ class FluxGenerator:
         if lora_path:
             print(f"Chargement du LoRA depuis {lora_path}...")
             self.pipe_txt2img.load_lora_weights(lora_path)
-            print(f"LoRA '{target_name}' chargé avec succès.")
+            # Fuse le LoRA dans les poids du modèle de base.
+            # Avantage : le LoRA est intégré directement, pas besoin de
+            # joint_attention_kwargs à l'inférence, et compatible avec
+            # sequential_cpu_offload (qui sinon casse le scaling runtime).
+            self.pipe_txt2img.fuse_lora(lora_scale=1.0)
+            self.pipe_txt2img.unload_lora_weights()  # Libère la mémoire de l'adaptateur
+            print(f"LoRA '{target_name}' chargé et fusionné dans le modèle.")
         else:
             print(f"ERREUR CRITIQUE : '{target_name}' introuvable dans le volume !")
             print(f"Fichiers disponibles : {[os.path.basename(l) for l in loras]}")
@@ -123,10 +129,10 @@ class FluxGenerator:
         self.pipe_txt2img.vae.enable_slicing()
         self.pipe_txt2img.vae.enable_tiling()
 
-        # Model CPU offload : déplace chaque composant (et non chaque couche)
-        # sur le GPU à la demande. Moins agressif que sequential_cpu_offload,
-        # préserve le LoRA scaling via joint_attention_kwargs.
-        self.pipe_txt2img.enable_model_cpu_offload()
+        # Sequential CPU offload : déplace chaque couche individuellement.
+        # Nécessaire sur A10G (24 Go) car le transformer Flux est trop gros
+        # pour model_cpu_offload. Compatible avec le LoRA car il est fusionné.
+        self.pipe_txt2img.enable_sequential_cpu_offload()
 
         # Pipeline img2img partage les mêmes composants (zéro duplication)
         self.pipe_img2img = FluxImg2ImgPipeline(
@@ -138,9 +144,9 @@ class FluxGenerator:
             transformer=self.pipe_txt2img.transformer,
             scheduler=self.pipe_txt2img.scheduler,
         )
-        self.pipe_img2img.enable_model_cpu_offload()
+        self.pipe_img2img.enable_sequential_cpu_offload()
 
-        print("Pipelines prêts (bfloat16 + model_cpu_offload + LoRA).")
+        print("Pipelines prêts (bfloat16 + sequential_cpu_offload + LoRA fusionné).")
 
     @modal.method()
     def generate(self, req: GenerateRequest):
@@ -157,11 +163,11 @@ class FluxGenerator:
         req.height = (req.height // 64) * 64
 
         # Paramètres d'inférence (Schnell = 4 steps, guidance=1.0 comme le training sampler)
+        # Pas de joint_attention_kwargs : le LoRA est fusionné dans les poids
         kwargs = {
             "prompt": prompt,
             "num_inference_steps": 4,
             "guidance_scale": 1.0,
-            "joint_attention_kwargs": {"scale": req.lora_scale},
         }
 
         if req.init_image:
