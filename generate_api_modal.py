@@ -158,12 +158,12 @@ class FluxGenerator:
         req.width = (req.width // 64) * 64
         req.height = (req.height // 64) * 64
 
-        # Paramètres d'inférence (Schnell = 4 steps, guidance=0.0 natif)
+        # Paramètres d'inférence (Schnell = 4 steps, guidance=1.0 car le LoRA a été entraîné avec GS=1)
         # On utilise joint_attention_kwargs pour le LoRA scale car fuse_lora est buggé sur Flux
         kwargs = {
             "prompt": prompt,
             "num_inference_steps": 4,
-            "guidance_scale": 0.0,
+            "guidance_scale": 1.0,
             "joint_attention_kwargs": {"scale": req.lora_scale},
         }
 
