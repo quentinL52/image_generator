@@ -31,8 +31,8 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
         "torch", 
-        "diffusers", 
-        "transformers", 
+        "diffusers>=0.31.0", 
+        "transformers>=4.44.0", 
         "accelerate",
         "safetensors", 
         "sentencepiece", 
@@ -93,58 +93,42 @@ class FluxGenerator:
     @modal.enter()
     def load_model(self):
         import torch
-        from diffusers import FluxPipeline, FluxImg2ImgPipeline, FluxTransformer2DModel
-        from transformers import BitsAndBytesConfig
+        from diffusers import FluxPipeline, FluxImg2ImgPipeline
 
-        print("Chargement du modèle Flux.1-schnell avec quantization NF4...")
-        
-        quant_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16
-        )
+        print("Chargement du modèle Flux.1-schnell en bfloat16...")
 
-        transformer = FluxTransformer2DModel.from_pretrained(
-            "black-forest-labs/FLUX.1-schnell",
-            subfolder="transformer",
-            quantization_config=quant_config,
-            torch_dtype=torch.bfloat16
-        )
-
+        # Chargement en bfloat16 pur — identique au notebook Kaggle
         self.pipe_txt2img = FluxPipeline.from_pretrained(
             "black-forest-labs/FLUX.1-schnell",
-            transformer=transformer,
-            torch_dtype=torch.bfloat16
-        ).to("cuda")
-        
-        # Trouver le fichier LoRA
+            torch_dtype=torch.bfloat16,
+        )
+
+        # Trouver le fichier LoRA — cible directe du modèle final
         import glob
+        target_name = "solle_flux_v2.safetensors"
         loras = glob.glob("/workspace/**/*.safetensors", recursive=True)
-        lora_path = None
-        
-        valid_loras = [l for l in loras if "solle" in l.lower()]
-        if valid_loras:
-            # Chercher en priorité le fichier final V2 ou V1 (sans numéro de checkpoint)
-            final_loras = [l for l in valid_loras if os.path.basename(l) in ["solle_flux_v2.safetensors", "solle_flux.safetensors"]]
-            if final_loras:
-                # S'il y a V2 et V1, prendre la V2
-                final_loras.sort(reverse=True)
-                lora_path = final_loras[0]
-            else:
-                # Sinon prendre le dernier par ordre alphabétique
-                lora_path = sorted(valid_loras)[-1]
-            
+        print(f"Fichiers .safetensors trouvés dans le volume : {loras}")
+
+        lora_path = next((l for l in loras if os.path.basename(l) == target_name), None)
+
         if lora_path:
             print(f"Chargement du LoRA depuis {lora_path}...")
-            self.pipe_txt2img.load_lora_weights(lora_path, adapter_name="solle")
+            self.pipe_txt2img.load_lora_weights(lora_path)
+            print(f"LoRA '{target_name}' chargé avec succès.")
         else:
-            print("Aucun LoRA trouvé dans le volume.")
+            print(f"ERREUR CRITIQUE : '{target_name}' introuvable dans le volume !")
+            print(f"Fichiers disponibles : {[os.path.basename(l) for l in loras]}")
 
-        # VAE slicing/tiling pour économiser encore plus de mémoire
+        # VAE slicing/tiling pour économiser la VRAM
         self.pipe_txt2img.vae.enable_slicing()
         self.pipe_txt2img.vae.enable_tiling()
-        
-        # Le pipeline img2img peut réutiliser les mêmes composants
+
+        # Model CPU offload : déplace chaque composant (et non chaque couche)
+        # sur le GPU à la demande. Moins agressif que sequential_cpu_offload,
+        # préserve le LoRA scaling via joint_attention_kwargs.
+        self.pipe_txt2img.enable_model_cpu_offload()
+
+        # Pipeline img2img partage les mêmes composants (zéro duplication)
         self.pipe_img2img = FluxImg2ImgPipeline(
             vae=self.pipe_txt2img.vae,
             text_encoder=self.pipe_txt2img.text_encoder,
@@ -153,7 +137,10 @@ class FluxGenerator:
             tokenizer_2=self.pipe_txt2img.tokenizer_2,
             transformer=self.pipe_txt2img.transformer,
             scheduler=self.pipe_txt2img.scheduler,
-        ).to("cuda")
+        )
+        self.pipe_img2img.enable_model_cpu_offload()
+
+        print("Pipelines prêts (bfloat16 + model_cpu_offload + LoRA).")
 
     @modal.method()
     def generate(self, req: GenerateRequest):
@@ -169,12 +156,12 @@ class FluxGenerator:
         req.width = (req.width // 64) * 64
         req.height = (req.height // 64) * 64
 
-        # Paramètres d'inférence (Schnell = 4 steps, guidance=0)
+        # Paramètres d'inférence (Schnell = 4 steps, guidance=1.0 comme le training sampler)
         kwargs = {
             "prompt": prompt,
             "num_inference_steps": 4,
-            "guidance_scale": 0.0,
-            "joint_attention_kwargs": {"scale": req.lora_scale}
+            "guidance_scale": 1.0,
+            "joint_attention_kwargs": {"scale": req.lora_scale},
         }
 
         if req.init_image:

@@ -59,7 +59,7 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
         initImageBase64 = await fileToBase64(imageFile);
       }
 
-      const response = await fetch('http://localhost:8000/generate', {
+      const response = await fetch('https://contact-4061--flux-solle-api-fluxgenerator-web.modal.run/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
