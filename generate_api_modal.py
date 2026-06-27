@@ -75,7 +75,7 @@ class GenerateRequest(BaseModel):
 # --- CLASSE SERVEUR GPU ---
 @app.cls(
     image=image,
-    gpu="A10G",
+    gpu="A100",
     memory=32768,
     timeout=300,
     scaledown_window=60,
@@ -123,10 +123,8 @@ class FluxGenerator:
         self.pipe_txt2img.vae.enable_slicing()
         self.pipe_txt2img.vae.enable_tiling()
 
-        # Sequential CPU offload : déplace chaque couche individuellement.
-        # Nécessaire sur A10G (24 Go) car le transformer Flux est trop gros
-        # pour model_cpu_offload. Compatible avec le LoRA car il est fusionné.
-        self.pipe_txt2img.enable_sequential_cpu_offload()
+        # Pas besoin d'offload sur A100 (40 Go), on charge tout en VRAM pour une vitesse maximale
+        self.pipe_txt2img.to("cuda")
 
         # Pipeline img2img partage les mêmes composants (zéro duplication)
         self.pipe_img2img = FluxImg2ImgPipeline(
@@ -138,9 +136,8 @@ class FluxGenerator:
             transformer=self.pipe_txt2img.transformer,
             scheduler=self.pipe_txt2img.scheduler,
         )
-        self.pipe_img2img.enable_sequential_cpu_offload()
 
-        print("Pipelines prêts (bfloat16 + sequential_cpu_offload + LoRA).")
+        print("Pipelines prêts (A100 VRAM + LoRA).")
 
     @modal.method()
     def generate(self, req: GenerateRequest):
