@@ -94,28 +94,40 @@ class FluxGenerator:
         import torch
         from diffusers import FluxPipeline
 
-        print("Chargement du modèle Flux.1-schnell en bfloat16...")
+        print("Chargement du modèle Flux.1-dev en bfloat16...")
 
-        # Chargement en bfloat16 pur — identique au notebook Kaggle
+        # Chargement en bfloat16 pur — idéal pour Dev
         self.pipe_txt2img = FluxPipeline.from_pretrained(
-            "black-forest-labs/FLUX.1-schnell",
+            "black-forest-labs/FLUX.1-dev",
             torch_dtype=torch.bfloat16,
         )
 
-        # Trouver le fichier LoRA — cible directe du modèle final
+        # Trouver le fichier LoRA principal et l'éventuel LoRA anti-flou
         import glob
         target_name = "solle_flux_v2.safetensors"
+        antiblur_name = "antiblur.safetensors"
         loras = glob.glob("/workspace/**/*.safetensors", recursive=True)
         print(f"Fichiers .safetensors trouvés dans le volume : {loras}")
 
         lora_path = next((l for l in loras if os.path.basename(l) == target_name), None)
+        antiblur_path = next((l for l in loras if os.path.basename(l) == antiblur_name), None)
 
+        # Chargement des adaptateurs LoRA avec PEFT
         if lora_path:
-            print(f"Chargement du LoRA depuis {lora_path}...")
-            self.pipe_txt2img.load_lora_weights(lora_path)
+            print(f"Chargement du LoRA principal depuis {lora_path}...")
+            self.pipe_txt2img.load_lora_weights(lora_path, adapter_name="solle")
             print(f"LoRA '{target_name}' chargé avec succès.")
         else:
             print(f"ERREUR CRITIQUE : '{target_name}' introuvable dans le volume !")
+
+        if antiblur_path:
+            print(f"Chargement du LoRA Anti-Blur depuis {antiblur_path}...")
+            self.pipe_txt2img.load_lora_weights(antiblur_path, adapter_name="antiblur")
+            print("LoRA Anti-Blur chargé avec succès.")
+            self.has_antiblur = True
+        else:
+            print("Aucun LoRA Anti-Blur détecté (optionnel).")
+            self.has_antiblur = False
 
         # VAE slicing/tiling pour économiser la VRAM
         self.pipe_txt2img.vae.enable_slicing()
@@ -124,7 +136,7 @@ class FluxGenerator:
         # Pas besoin d'offload sur A100 (40 Go), on charge tout en VRAM pour une vitesse maximale
         self.pipe_txt2img.to("cuda")
 
-        print("Pipeline prêt (A100 VRAM + LoRA).")
+        print("Pipeline prêt (A100 VRAM).")
 
     @modal.method()
     def generate(self, job_id: str, req: GenerateRequest):
@@ -146,12 +158,20 @@ class FluxGenerator:
             req.width = (req.width // 64) * 64
             req.height = (req.height // 64) * 64
 
-            # Paramètres d'inférence (Schnell = 4 steps, guidance=1.0 car le LoRA a été entraîné avec GS=1)
+            # Configurer dynamiquement les poids des LoRAs actifs
+            if self.has_antiblur:
+                # Appliquer les deux LoRAs en même temps
+                self.pipe_txt2img.set_adapters(["solle", "antiblur"], adapter_weights=[req.lora_scale, 1.0])
+                print(f"Inférence avec double LoRA : Solle={req.lora_scale}, AntiBlur=1.0")
+            else:
+                self.pipe_txt2img.set_adapters(["solle"], adapter_weights=[req.lora_scale])
+                print(f"Inférence avec LoRA unique : Solle={req.lora_scale}")
+
+            # Paramètres d'inférence (Dev = 25 steps, guidance=3.5 est le standard)
             kwargs = {
                 "prompt": prompt,
-                "num_inference_steps": 4,
-                "guidance_scale": 1.0,
-                "joint_attention_kwargs": {"scale": req.lora_scale},
+                "num_inference_steps": 25,
+                "guidance_scale": 3.5,
                 "width": req.width,
                 "height": req.height,
             }
