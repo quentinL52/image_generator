@@ -148,11 +148,14 @@ class FluxGenerator:
             jobs_state[job_id] = {"status": "processing"}
 
             prompt = req.prompt
-            # Force le trigger complet (nom + classe) comme dans le dataset
-            if "sollechar" not in prompt.lower():
+            # Force le trigger complet (nom + classe) de manière propre sans doublons
+            clean_prompt = prompt.lower()
+            if "sollechar" not in clean_prompt:
                 prompt = f"sollechar, purple furry monster, {prompt}"
-            elif "purple furry monster" not in prompt.lower():
-                prompt = prompt.replace("sollechar", "sollechar, purple furry monster")
+            else:
+                if "purple furry monster" not in clean_prompt:
+                    # Remplacer uniquement la première occurrence
+                    prompt = prompt.replace("sollechar", "sollechar, purple furry monster", 1)
 
             # S'assurer que les dimensions sont des multiples de 64 (requis pour Flux)
             req.width = (req.width // 64) * 64
