@@ -273,6 +273,15 @@ input:focus {
   animation: spin 1s linear infinite;
 }
 
+.status-text {
+  font-size: 0.9rem;
+  color: var(--color-primary);
+  text-align: center;
+  margin-top: 0.5rem;
+  font-weight: 500;
+  animation: fadeIn 0.3s ease;
+}
+
 .image-preview-container {
   display: flex;
   align-items: center;

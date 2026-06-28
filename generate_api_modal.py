@@ -69,31 +69,30 @@ class GenerateRequest(BaseModel):
     lora_scale: float = 0.8
     width: int = 1024
     height: int = 1024
-    init_image: Optional[str] = None  # Base64 string pour image-to-image
-    strength: float = 0.6  # Pour img2img
 
-# --- CLASSE SERVEUR GPU ---
+jobs_state = modal.Dict.from_name("jobs-state", create_if_missing=True)
+
+# --- CLASSE SERVEUR GPU (Worker) ---
 @app.cls(
     image=image,
     gpu="A100",
     memory=32768,
-    timeout=300,
-    scaledown_window=60,
+    timeout=600,
+    scaledown_window=300, # Garde le GPU chaud pendant 5 min après une requête
     min_containers=0,
     volumes={
         "/cache": model_cache,
         "/workspace": lora_vol,
     },
     secrets=[
-        modal.Secret.from_name("hf-secret"), 
-        modal.Secret.from_name("api-tokens")
+        modal.Secret.from_name("hf-secret")
     ],
 )
 class FluxGenerator:
     @modal.enter()
     def load_model(self):
         import torch
-        from diffusers import FluxPipeline, FluxImg2ImgPipeline
+        from diffusers import FluxPipeline
 
         print("Chargement du modèle Flux.1-schnell en bfloat16...")
 
@@ -114,10 +113,9 @@ class FluxGenerator:
         if lora_path:
             print(f"Chargement du LoRA depuis {lora_path}...")
             self.pipe_txt2img.load_lora_weights(lora_path)
-            print(f"LoRA '{target_name}' chargé avec succès (sans fuse_lora car expérimental sur Flux).")
+            print(f"LoRA '{target_name}' chargé avec succès.")
         else:
             print(f"ERREUR CRITIQUE : '{target_name}' introuvable dans le volume !")
-            print(f"Fichiers disponibles : {[os.path.basename(l) for l in loras]}")
 
         # VAE slicing/tiling pour économiser la VRAM
         self.pipe_txt2img.vae.enable_slicing()
@@ -126,70 +124,69 @@ class FluxGenerator:
         # Pas besoin d'offload sur A100 (40 Go), on charge tout en VRAM pour une vitesse maximale
         self.pipe_txt2img.to("cuda")
 
-        # Pipeline img2img partage les mêmes composants (zéro duplication)
-        self.pipe_img2img = FluxImg2ImgPipeline(
-            vae=self.pipe_txt2img.vae,
-            text_encoder=self.pipe_txt2img.text_encoder,
-            text_encoder_2=self.pipe_txt2img.text_encoder_2,
-            tokenizer=self.pipe_txt2img.tokenizer,
-            tokenizer_2=self.pipe_txt2img.tokenizer_2,
-            transformer=self.pipe_txt2img.transformer,
-            scheduler=self.pipe_txt2img.scheduler,
-        )
-
-        print("Pipelines prêts (A100 VRAM + LoRA).")
+        print("Pipeline prêt (A100 VRAM + LoRA).")
 
     @modal.method()
-    def generate(self, req: GenerateRequest):
+    def generate(self, job_id: str, req: GenerateRequest):
         import torch
         from PIL import Image
 
-        prompt = req.prompt
-        # Force le trigger complet (nom + classe) comme dans le dataset
-        if "sollechar" not in prompt.lower():
-            prompt = f"sollechar, purple furry monster, {prompt}"
-        elif "purple furry monster" not in prompt.lower():
-            prompt = prompt.replace("sollechar", "sollechar, purple furry monster")
+        try:
+            # Mettre à jour le statut
+            jobs_state[job_id] = {"status": "processing"}
 
-        # S'assurer que les dimensions sont des multiples de 64 (requis pour Flux)
-        req.width = (req.width // 64) * 64
-        req.height = (req.height // 64) * 64
+            prompt = req.prompt
+            # Force le trigger complet (nom + classe) comme dans le dataset
+            if "sollechar" not in prompt.lower():
+                prompt = f"sollechar, purple furry monster, {prompt}"
+            elif "purple furry monster" not in prompt.lower():
+                prompt = prompt.replace("sollechar", "sollechar, purple furry monster")
 
-        # Paramètres d'inférence (Schnell = 4 steps, guidance=1.0 car le LoRA a été entraîné avec GS=1)
-        # On utilise joint_attention_kwargs pour le LoRA scale car fuse_lora est buggé sur Flux
-        kwargs = {
-            "prompt": prompt,
-            "num_inference_steps": 4,
-            "guidance_scale": 1.0,
-            "joint_attention_kwargs": {"scale": req.lora_scale},
-        }
+            # S'assurer que les dimensions sont des multiples de 64 (requis pour Flux)
+            req.width = (req.width // 64) * 64
+            req.height = (req.height // 64) * 64
 
-        if req.init_image:
-            # Img2Img
-            init_image_bytes = base64.b64decode(req.init_image)
-            image_obj = Image.open(BytesIO(init_image_bytes)).convert("RGB")
-            # Redimensionner l'image initiale
-            image_obj = image_obj.resize((req.width, req.height))
-            
-            kwargs["image"] = image_obj
-            kwargs["strength"] = req.strength
-            
-            result = self.pipe_img2img(**kwargs).images[0]
-        else:
-            # Txt2Img
-            kwargs["width"] = req.width
-            kwargs["height"] = req.height
+            # Paramètres d'inférence (Schnell = 4 steps, guidance=1.0 car le LoRA a été entraîné avec GS=1)
+            kwargs = {
+                "prompt": prompt,
+                "num_inference_steps": 4,
+                "guidance_scale": 1.0,
+                "joint_attention_kwargs": {"scale": req.lora_scale},
+                "width": req.width,
+                "height": req.height,
+            }
+
             result = self.pipe_txt2img(**kwargs).images[0]
 
-        # Convertir en WebP
-        buffer = BytesIO()
-        result.save(buffer, format="WEBP", quality=80)
-        buffer.seek(0)
-        return buffer.getvalue()
+            # Convertir en JPEG
+            buffer = BytesIO()
+            result.save(buffer, format="JPEG", quality=90)
+            buffer.seek(0)
+            
+            # Stocker le résultat et marquer comme terminé
+            jobs_state[job_id] = {"status": "completed", "image": buffer.getvalue()}
 
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            jobs_state[job_id] = {"status": "failed", "error": str(e)}
+
+
+# --- CLASSE SERVEUR CPU (API) ---
+@app.cls(
+    image=image,
+    cpu=0.25,
+    memory=256,
+    min_containers=1, # Toujours allumé pour masquer la latence de l'API
+    secrets=[
+        modal.Secret.from_name("api-tokens")
+    ],
+)
+class ApiServer:
     @modal.asgi_app()
     def web(self):
         from fastapi import Response
+        import uuid
         
         @app_api.get("/stats")
         async def stats():
@@ -199,7 +196,6 @@ class FluxGenerator:
             
             current_spend = 0.0
             try:
-                # Tentative via Modal API (si supporté par la version actuelle)
                 current_spend = modal.Usage.get_current_month()
             except AttributeError:
                 pass
@@ -207,32 +203,59 @@ class FluxGenerator:
             return {
                 "monthly_spend": current_spend,
                 "images_today": images_today,
-                "avg_generation_time": "~12s",  # Estimation
+                "avg_generation_time": "~8s",
                 "remaining_budget": max(0.0, 30.0 - current_spend)
             }
 
         @app_api.post("/generate")
         def generate_endpoint(request: GenerateRequest, api_key: str = Depends(get_api_key)):
-            try:
-                # Rate limiting check
-                user_key = f"quota_{api_key}"
-                count = usage.get(user_key, 0)
-                if count >= 50:
-                    raise HTTPException(status_code=429, detail="Quota journalier atteint (50 images max).")
-                
-                # Exécution sur le GPU via remote()
-                # On utilise remote() pour envoyer la charge sur la méthode décorée par @modal.method()
-                image_bytes = self.generate.remote(request)
-                
-                # Mise à jour du compteur
-                usage[user_key] = count + 1
-                
-                return Response(content=image_bytes, media_type="image/webp")
-            except HTTPException:
-                raise
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                raise HTTPException(status_code=500, detail=str(e))
+            # Rate limiting check
+            user_key = f"quota_{api_key}"
+            count = usage.get(user_key, 0)
+            if count >= 50:
+                raise HTTPException(status_code=429, detail="Quota journalier atteint (50 images max).")
             
+            job_id = str(uuid.uuid4())
+            jobs_state[job_id] = {"status": "pending"}
+            
+            # Exécution ASYNCHRONE sur le GPU via spawn()
+            FluxGenerator().generate.spawn(job_id, request)
+            
+            # Mise à jour du compteur
+            usage[user_key] = count + 1
+            
+            # Retourne le job_id immédiatement
+            return {"job_id": job_id, "status": "pending"}
+
+        @app_api.get("/status/{job_id}")
+        def status_endpoint(job_id: str):
+            state = jobs_state.get(job_id)
+            if not state:
+                raise HTTPException(status_code=404, detail="Job introuvable")
+            
+            # Ne pas renvoyer les bytes de l'image dans l'endpoint de statut
+            return {
+                "job_id": job_id,
+                "status": state.get("status"),
+                "error": state.get("error")
+            }
+
+        @app_api.get("/image/{job_id}")
+        def image_endpoint(job_id: str):
+            state = jobs_state.get(job_id)
+            if not state:
+                raise HTTPException(status_code=404, detail="Job introuvable")
+            
+            if state.get("status") != "completed":
+                raise HTTPException(status_code=400, detail=f"Image non prête. Statut actuel: {state.get('status')}")
+            
+            image_bytes = state.get("image")
+            if not image_bytes:
+                raise HTTPException(status_code=500, detail="Image perdue")
+                
+            # Nettoyer pour libérer la mémoire du Dict
+            del jobs_state[job_id]
+            
+            return Response(content=image_bytes, media_type="image/jpeg")
+
         return app_api
