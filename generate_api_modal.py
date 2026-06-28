@@ -229,11 +229,11 @@ class ApiServer:
 
         @app_api.post("/generate")
         def generate_endpoint(request: GenerateRequest, api_key: str = Depends(get_api_key)):
-            # Rate limiting check
+            # Rate limiting check (Augmenté à 1000 images par jour pour éviter les blocages en test)
             user_key = f"quota_{api_key}"
             count = usage.get(user_key, 0)
-            if count >= 50:
-                raise HTTPException(status_code=429, detail="Quota journalier atteint (50 images max).")
+            if count >= 1000:
+                raise HTTPException(status_code=429, detail="Quota journalier atteint (1000 images max).")
             
             job_id = str(uuid.uuid4())
             jobs_state[job_id] = {"status": "pending"}
