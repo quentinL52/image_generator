@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, Loader2, Download, Sliders } from 'lucide-react';
+import { Send, Loader2, Download, Sliders, Image as ImageIcon } from 'lucide-react';
 
 interface GeneratorProps {
   apiKey: string;
@@ -7,7 +7,8 @@ interface GeneratorProps {
 
 export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
   const [prompt, setPrompt] = useState('');
-  const [loraScale, setLoraScale] = useState<number>(0.8);
+  const [loraScale, setLoraScale] = useState<number>(0.85);
+  const [sharpBackground, setSharpBackground] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('');
   const [resultImage, setResultImage] = useState<string | null>(null);
@@ -25,6 +26,11 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
     setResultImage(null);
 
     try {
+      let finalPrompt = prompt;
+      if (sharpBackground) {
+        finalPrompt += ", deep depth of field, f/16, sharp background, everything in focus, wide angle lens";
+      }
+
       // 1. Submit Job
       const submitResponse = await fetch(`${API_BASE_URL}/generate`, {
         method: 'POST',
@@ -33,7 +39,7 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
           'X-API-Key': apiKey
         },
         body: JSON.stringify({
-          prompt: prompt,
+          prompt: finalPrompt,
           width: 1024,
           height: 1024,
           lora_scale: loraScale
@@ -126,19 +132,34 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
               </button>
             </div>
             
-            <div className="settings-wrapper" style={{ marginTop: '0.5rem', padding: '0 0.5rem', display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--color-text-dim)', fontSize: '0.9rem' }}>
-              <Sliders size={16} />
-              <span>Force du personnage (LoRA) : {loraScale.toFixed(2)}</span>
-              <input 
-                type="range" 
-                min="0.1" 
-                max="1.2" 
-                step="0.05" 
-                value={loraScale} 
-                onChange={(e) => setLoraScale(parseFloat(e.target.value))}
-                style={{ flex: 1, accentColor: 'var(--color-primary)' }}
-                disabled={isGenerating}
-              />
+            <div className="settings-wrapper" style={{ marginTop: '0.5rem', padding: '0 0.5rem', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '1.5rem', color: 'var(--color-text-dim)', fontSize: '0.9rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 200px' }}>
+                <Sliders size={16} />
+                <span>Force (LoRA) : {loraScale.toFixed(2)}</span>
+                <input 
+                  type="range" 
+                  min="0.1" 
+                  max="1.2" 
+                  step="0.05" 
+                  value={loraScale} 
+                  onChange={(e) => setLoraScale(parseFloat(e.target.value))}
+                  style={{ flex: 1, accentColor: 'var(--color-primary)' }}
+                  disabled={isGenerating}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <ImageIcon size={16} />
+                <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={sharpBackground}
+                    onChange={(e) => setSharpBackground(e.target.checked)}
+                    disabled={isGenerating}
+                    style={{ accentColor: 'var(--color-primary)', width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                  Forcer le fond net (Paysage)
+                </label>
+              </div>
             </div>
 
             {isGenerating && <div className="status-text">{generationStatus}</div>}
