@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, Loader2, Download, Sliders, Image as ImageIcon } from 'lucide-react';
+import { Send, Loader2, Download, Sliders, Image as ImageIcon, LayoutTemplate } from 'lucide-react';
 
 interface GeneratorProps {
   apiKey: string;
@@ -9,6 +9,7 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
   const [prompt, setPrompt] = useState('');
   const [loraScale, setLoraScale] = useState<number>(0.85);
   const [stylePreset, setStylePreset] = useState<string>('none');
+  const [aspectRatio, setAspectRatio] = useState<string>('square');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('');
   const [resultImage, setResultImage] = useState<string | null>(null);
@@ -33,6 +34,16 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
         finalPrompt += ", 3d animated movie style, cartoon, flat shading, clear background, vibrant colors, illustration";
       }
 
+      let width = 1024;
+      let height = 1024;
+      if (aspectRatio === 'landscape') {
+        width = 1280;
+        height = 768;
+      } else if (aspectRatio === 'portrait') {
+        width = 768;
+        height = 1280;
+      }
+
       // 1. Submit Job
       const submitResponse = await fetch(`${API_BASE_URL}/generate`, {
         method: 'POST',
@@ -42,8 +53,8 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
         },
         body: JSON.stringify({
           prompt: finalPrompt,
-          width: 1024,
-          height: 1024,
+          width: width,
+          height: height,
           lora_scale: loraScale
         })
       });
@@ -149,6 +160,33 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
                   disabled={isGenerating}
                 />
               </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <LayoutTemplate size={16} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  Format :
+                  <select 
+                    value={aspectRatio} 
+                    onChange={(e) => setAspectRatio(e.target.value)}
+                    disabled={isGenerating}
+                    style={{ 
+                      background: 'rgba(0,0,0,0.4)', 
+                      color: 'var(--color-text)', 
+                      border: '1px solid var(--glass-border)', 
+                      borderRadius: '8px', 
+                      padding: '4px 8px',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="square">Carré (1024x1024)</option>
+                    <option value="landscape">Paysage (1280x768)</option>
+                    <option value="portrait">Portrait (768x1280)</option>
+                  </select>
+                </label>
+              </div>
+
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <ImageIcon size={16} />
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
