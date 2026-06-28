@@ -29,7 +29,7 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
     try {
       let finalPrompt = prompt;
       if (stylePreset === 'realistic') {
-        finalPrompt += ", amateur smartphone photo, shot on iPhone, real life, deep depth of field, sharp background, everything in focus";
+        finalPrompt = `sharp in-focus background, highly detailed scenery, photo of ${prompt}, amateur smartphone photo, shot on iPhone, deep depth of field, everything in focus`;
       } else if (stylePreset === 'cartoon') {
         finalPrompt += ", 3d animated movie style, cartoon, flat shading, clear background, vibrant colors, illustration";
       }
