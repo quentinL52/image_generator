@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, Loader2, Download } from 'lucide-react';
+import { Send, Loader2, Download, Sliders } from 'lucide-react';
 
 interface GeneratorProps {
   apiKey: string;
@@ -7,6 +7,7 @@ interface GeneratorProps {
 
 export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
   const [prompt, setPrompt] = useState('');
+  const [loraScale, setLoraScale] = useState<number>(0.8);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('');
   const [resultImage, setResultImage] = useState<string | null>(null);
@@ -35,7 +36,7 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
           prompt: prompt,
           width: 1024,
           height: 1024,
-          lora_scale: 0.8
+          lora_scale: loraScale
         })
       });
 
@@ -124,6 +125,22 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
                 {isGenerating ? <Loader2 className="spinner" size={20} /> : <Send size={20} />}
               </button>
             </div>
+            
+            <div className="settings-wrapper" style={{ marginTop: '0.5rem', padding: '0 0.5rem', display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--color-text-dim)', fontSize: '0.9rem' }}>
+              <Sliders size={16} />
+              <span>Force du personnage (LoRA) : {loraScale.toFixed(2)}</span>
+              <input 
+                type="range" 
+                min="0.1" 
+                max="1.2" 
+                step="0.05" 
+                value={loraScale} 
+                onChange={(e) => setLoraScale(parseFloat(e.target.value))}
+                style={{ flex: 1, accentColor: 'var(--color-primary)' }}
+                disabled={isGenerating}
+              />
+            </div>
+
             {isGenerating && <div className="status-text">{generationStatus}</div>}
           </form>
 
