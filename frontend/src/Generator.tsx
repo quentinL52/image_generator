@@ -8,7 +8,7 @@ interface GeneratorProps {
 export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
   const [prompt, setPrompt] = useState('');
   const [loraScale, setLoraScale] = useState<number>(0.85);
-  const [sharpBackground, setSharpBackground] = useState<boolean>(false);
+  const [stylePreset, setStylePreset] = useState<string>('none');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('');
   const [resultImage, setResultImage] = useState<string | null>(null);
@@ -27,8 +27,10 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
 
     try {
       let finalPrompt = prompt;
-      if (sharpBackground) {
-        finalPrompt += ", deep depth of field, f/16, sharp background, everything in focus, wide angle lens";
+      if (stylePreset === 'realistic') {
+        finalPrompt += ", amateur smartphone photo, shot on iPhone, real life, deep depth of field, sharp background, everything in focus";
+      } else if (stylePreset === 'cartoon') {
+        finalPrompt += ", 3d animated movie style, cartoon, flat shading, clear background, vibrant colors, illustration";
       }
 
       // 1. Submit Job
@@ -149,15 +151,27 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <ImageIcon size={16} />
-                <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <input 
-                    type="checkbox" 
-                    checked={sharpBackground}
-                    onChange={(e) => setSharpBackground(e.target.checked)}
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  Style :
+                  <select 
+                    value={stylePreset} 
+                    onChange={(e) => setStylePreset(e.target.value)}
                     disabled={isGenerating}
-                    style={{ accentColor: 'var(--color-primary)', width: '16px', height: '16px', cursor: 'pointer' }}
-                  />
-                  Forcer le fond net (Paysage)
+                    style={{ 
+                      background: 'rgba(0,0,0,0.4)', 
+                      color: 'var(--color-text)', 
+                      border: '1px solid var(--glass-border)', 
+                      borderRadius: '8px', 
+                      padding: '4px 8px',
+                      outline: 'none',
+                      fontFamily: 'inherit',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="none">Aucun (Défaut)</option>
+                    <option value="cartoon">100% Cartoon (Original)</option>
+                    <option value="realistic">Photoréaliste (Fond net)</option>
+                  </select>
                 </label>
               </div>
             </div>
