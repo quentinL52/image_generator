@@ -160,9 +160,9 @@ class FluxGenerator:
 
             # Configurer dynamiquement les poids des LoRAs actifs
             if self.has_antiblur:
-                # Appliquer les deux LoRAs en même temps
-                self.pipe_txt2img.set_adapters(["solle", "antiblur"], adapter_weights=[req.lora_scale, 1.0])
-                print(f"Inférence avec double LoRA : Solle={req.lora_scale}, AntiBlur=1.0")
+                # Appliquer les deux LoRAs en même temps (AntiBlur poussé à 1.5 pour plus d'effet)
+                self.pipe_txt2img.set_adapters(["solle", "antiblur"], adapter_weights=[req.lora_scale, 1.5])
+                print(f"Inférence avec double LoRA : Solle={req.lora_scale}, AntiBlur=1.5")
             else:
                 self.pipe_txt2img.set_adapters(["solle"], adapter_weights=[req.lora_scale])
                 print(f"Inférence avec LoRA unique : Solle={req.lora_scale}")
