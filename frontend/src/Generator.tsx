@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Send, Loader2, Download, Sliders, Image as ImageIcon, LayoutTemplate } from 'lucide-react';
 
 interface GeneratorProps {
@@ -14,6 +14,15 @@ export const Generator: React.FC<GeneratorProps> = ({ apiKey }) => {
   const [generationStatus, setGenerationStatus] = useState('');
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // ⚡ Bolt: Cleanup Object URLs to prevent memory leaks when images are replaced or component unmounts
+  useEffect(() => {
+    return () => {
+      if (resultImage) {
+        URL.revokeObjectURL(resultImage);
+      }
+    };
+  }, [resultImage]);
 
   const API_BASE_URL = 'https://contact-4061--flux-solle-api-apiserver-web.modal.run';
 
