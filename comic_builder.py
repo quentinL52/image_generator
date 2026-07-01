@@ -30,13 +30,18 @@ def create_comic_bubble(image_path, output_path, text, bubble_position, tail_tar
         # Préparer le texte (gérer les retours à la ligne)
         lines = textwrap.wrap(text, width=max_width)
         
-        # Calculer la taille de la boîte de texte
-        # draw.textbbox retourne (left, top, right, bottom)
-        text_widths = [draw.textbbox((0, 0), line, font=font)[2] - draw.textbbox((0, 0), line, font=font)[0] for line in lines]
-        text_heights = [draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1] for line in lines]
-        
-        max_text_width = max(text_widths) if text_widths else 0
-        total_text_height = sum(text_heights) + 5 * (len(lines) - 1) # 5px d'espacement entre les lignes
+        # ⚡ Bolt Optimization: Cache bounding box dimensions to eliminate redundant textbbox() calls
+        line_dims = []
+        for line in lines:
+            bbox = draw.textbbox((0, 0), line, font=font)
+            line_dims.append({
+                'line': line,
+                'width': bbox[2] - bbox[0],
+                'height': bbox[3] - bbox[1]
+            })
+
+        max_text_width = max((dim['width'] for dim in line_dims), default=0)
+        total_text_height = sum(dim['height'] for dim in line_dims) + 5 * (len(lines) - 1) # 5px d'espacement entre les lignes
         
         # Dimensions de la bulle (avec une marge/padding)
         padding_x = 30
@@ -68,12 +73,10 @@ def create_comic_bubble(image_path, output_path, text, bubble_position, tail_tar
         
         # Écrire le texte centré dans la bulle
         current_y = top + padding_y
-        for line in lines:
-            line_w = draw.textbbox((0, 0), line, font=font)[2] - draw.textbbox((0, 0), line, font=font)[0]
-            line_x = bx - line_w // 2
-            draw.text((line_x, current_y), line, fill="black", font=font)
-            line_h = draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1]
-            current_y += line_h + 5
+        for dim in line_dims:
+            line_x = bx - dim['width'] // 2
+            draw.text((line_x, current_y), dim['line'], fill="black", font=font)
+            current_y += dim['height'] + 5
             
         # Sauvegarder
         img = img.convert("RGB") # Enlever l'alpha pour jpg
