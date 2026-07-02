@@ -1,0 +1,3 @@
+## 2024-05-18 - Vite React Code Splitting Insight
+**Learning:** In a single-page React app bundled with Vite, heavily interactive components that are hidden behind an authentication wall (like the `Generator` component here, which uses icons and external API calls) are prime candidates for code splitting. Even for relatively small applications, separating out the authenticated view reduced the initial JS bundle payload size significantly (from ~199 KB to ~193 KB, with the rest loaded only upon login).
+**Action:** Always consider `React.lazy` for authenticated or conditional routes that make up a large portion of the application but are not immediately visible. This ensures faster Time To Interactive (TTI) for the initial screen (like a Login screen).
